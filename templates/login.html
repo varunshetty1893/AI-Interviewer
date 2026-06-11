@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Log in · InterviewQuest{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+{% block content %}
+<section class="container-fluid px-4 px-md-5 py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-8 col-lg-5">
+      <div class="custom-card auth-card" data-testid="login-card">
+        <h1 class="h2 fw-black mb-1">Welcome back.</h1>
+        <p class="text-muted mb-4">Log in to continue practicing.</p>
+
+        {% if error %}<div class="alert alert-coral" data-testid="login-error">{{ error }}</div>{% endif %}
+
+        <form method="POST" action="{{ url_for('login') }}" data-testid="login-form">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Email</label>
+            <input type="email" class="form-control custom-input" name="email" required autocomplete="email" data-testid="login-email" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">Password</label>
+            <input type="password" class="form-control custom-input" name="password" required autocomplete="current-password" data-testid="login-password" />
+          </div>
+          <button type="submit" class="btn custom-btn-primary w-100 mt-2" data-testid="login-submit">Log in</button>
+        </form>
+
+        <div class="text-center mt-4 text-muted">
+          New here? <a href="{{ url_for('signup_page') }}" class="link-bold" data-testid="login-to-signup">Create an account</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

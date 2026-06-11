@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Set up interview · InterviewQuest{% endblock %}
+{% block head_extra %}
+<style>
+  .exp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.75rem;
+  }
+  .exp-card {
+    position: relative;
+    cursor: pointer;
+  }
+  .exp-card input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .exp-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 1rem 0.75rem;
+    border: 2px solid var(--border-hard);
+    border-radius: 12px;
+    background: var(--bg-card);
+    box-shadow: 3px 3px 0 0 var(--border-hard);
+    cursor: pointer;
+    transition: transform .1s, box-shadow .1s, background .1s;
+    text-align: center;
+    user-select: none;
+  }
+  .exp-label:hover {
+    transform: translate(1px, 1px);
+    box-shadow: 2px 2px 0 0 var(--border-hard);
+    background: var(--primary-mint-soft);
+  }
+  .exp-card input[type="radio"]:checked + .exp-label {
+    background: var(--primary-butter);
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 0 var(--border-hard);
+  }
+  .exp-icon { font-size: 1.6rem; line-height: 1; }
+  .exp-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .exp-sub { font-size: 0.7rem; color: var(--text-muted); font-weight: 500; }
+
+  .section-label {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 0.6rem;
+  }
+  .jd-area { resize: vertical; min-height: 180px; }
+</style>
+{% endblock %}
+{% block content %}
+<section class="container-fluid px-4 px-md-5 py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <a href="{{ url_for('dashboard') }}" class="link-bold" data-testid="setup-back-link"><i class="bi bi-arrow-left"></i>&nbsp;Back to dashboard</a>
+
+      <h1 class="display-4 fw-black mt-2" data-testid="setup-title">Set up your interview.</h1>
+      <p class="lead text-muted mb-4">Paste the job description and tell us a bit about yourself.</p>
+
+      {% if error %}<div class="alert alert-coral mb-4" data-testid="setup-error">{{ error }}</div>{% endif %}
+
+      <form method="POST" action="{{ url_for('start_interview') }}" id="setup-form" data-testid="setup-form">
+
+        <!-- JD -->
+        <div class="custom-card mb-4">
+          <div class="section-label"><i class="bi bi-file-text"></i>&nbsp;Job Description <span class="text-coral">*</span></div>
+          <textarea class="form-control custom-input jd-area" name="jd" rows="8" placeholder="Paste the full job description here…" required data-testid="setup-jd">{{ (form.jd if form else '') }}</textarea>
+          <div class="form-text mt-1">Include responsibilities, required skills, and tools mentioned.</div>
+        </div>
+
+        <!-- Role + Skills -->
+        <div class="custom-card mb-4">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="section-label"><i class="bi bi-briefcase"></i>&nbsp;Role / Designation</div>
+              <input type="text" class="form-control custom-input" name="role" placeholder="e.g. Software Developer Intern" value="{{ (form.role if form else '') }}" data-testid="setup-role" />
+            </div>
+            <div class="col-md-6">
+              <div class="section-label"><i class="bi bi-tools"></i>&nbsp;Your Skills</div>
+              <input type="text" class="form-control custom-input" name="skills" placeholder="e.g. Python, React, SQL, AWS" value="{{ (form.skills if form else '') }}" data-testid="setup-skills" />
+              <div class="form-text">Separate with commas.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Experience level cards -->
+        <div class="custom-card mb-4">
+          <div class="section-label"><i class="bi bi-bar-chart-steps"></i>&nbsp;Experience Level</div>
+          <div class="exp-grid">
+
+            <label class="exp-card">
+              <input type="radio" name="experience" value="fresher" {% if not form or (form and form.get('experience','fresher') == 'fresher') %}checked{% endif %} />
+              <span class="exp-label">
+                <span class="exp-icon">🌱</span>
+                <span class="exp-title">Fresher</span>
+                <span class="exp-sub">No experience</span>
+              </span>
+            </label>
+
+            <label class="exp-card">
+              <input type="radio" name="experience" value="intern" {% if form and form.get('experience') == 'intern' %}checked{% endif %} />
+              <span class="exp-label">
+                <span class="exp-icon">🎓</span>
+                <span class="exp-title">Intern</span>
+                <span class="exp-sub">0–1 year</span>
+              </span>
+            </label>
+
+            <label class="exp-card">
+              <input type="radio" name="experience" value="junior" {% if form and form.get('experience') == 'junior' %}checked{% endif %} />
+              <span class="exp-label">
+                <span class="exp-icon">🚀</span>
+                <span class="exp-title">Junior</span>
+                <span class="exp-sub">1–3 years</span>
+              </span>
+            </label>
+
+            <label class="exp-card">
+              <input type="radio" name="experience" value="mid" {% if form and form.get('experience') == 'mid' %}checked{% endif %} />
+              <span class="exp-label">
+                <span class="exp-icon">💼</span>
+                <span class="exp-title">Mid-level</span>
+                <span class="exp-sub">3–5 years</span>
+              </span>
+            </label>
+
+            <label class="exp-card">
+              <input type="radio" name="experience" value="senior" {% if form and form.get('experience') == 'senior' %}checked{% endif %} />
+              <span class="exp-label">
+                <span class="exp-icon">🧠</span>
+                <span class="exp-title">Senior</span>
+                <span class="exp-sub">5–8 years</span>
+              </span>
+            </label>
+
+            <label class="exp-card">
+              <input type="radio" name="experience" value="lead" {% if form and form.get('experience') == 'lead' %}checked{% endif %} />
+              <span class="exp-label">
+                <span class="exp-icon">👑</span>
+                <span class="exp-title">Lead / Staff</span>
+                <span class="exp-sub">8+ years</span>
+              </span>
+            </label>
+
+          </div>
+        </div>
+
+        <button type="submit" class="btn custom-btn-primary btn-lg" id="setup-submit" data-testid="setup-submit">
+          <span class="label-default"><i class="bi bi-play-circle"></i>&nbsp;Start interview</span>
+          <span class="label-loading d-none"><span class="spinner-border spinner-border-sm"></span>&nbsp;Generating questions…</span>
+        </button>
+        <p class="text-muted mt-3 mb-0 small"><i class="bi bi-stars"></i>&nbsp;This usually takes 5–15 seconds.</p>
+
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.getElementById('setup-form').addEventListener('submit', function() {
+    const btn = document.getElementById('setup-submit');
+    btn.disabled = true;
+    btn.querySelector('.label-default').classList.add('d-none');
+    btn.querySelector('.label-loading').classList.remove('d-none');
+  });
+</script>
+{% endblock %}

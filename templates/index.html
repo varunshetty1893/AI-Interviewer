@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}InterviewQuest · Ace your next interview{% endblock %}
+{% block content %}
+<section class="hero-section">
+  <div class="container-fluid px-4 px-md-5 py-5">
+    <div class="row align-items-center g-5">
+      <div class="col-lg-7">
+        <span class="pill-tag" data-testid="hero-tag"><i class="bi bi-stars"></i>&nbsp;AI-Powered Interview Prep</span>
+        <h1 class="display-1 hero-title mt-3" data-testid="hero-title">
+          Ace your next<br />
+          <span class="hero-highlight">interview</span>
+          with practice<br/> that <em class="hero-em">feels real.</em>
+        </h1>
+        <p class="lead mt-4 col-lg-10" data-testid="hero-subtitle">
+          Paste any Job Description, share your academic background, and InterviewQuest
+          runs a realistic mock interview — HR, technical, behavioral — then scores
+          your answers and recommends what to study next.
+        </p>
+        <div class="d-flex flex-wrap gap-3 mt-4">
+          {% if user %}
+            <a href="{{ url_for('setup_page') }}" class="btn custom-btn-primary btn-lg" data-testid="start-interview-btn">
+              Start a new interview&nbsp;<i class="bi bi-arrow-right"></i>
+            </a>
+            <a href="{{ url_for('dashboard') }}" class="btn custom-btn-ghost btn-lg" data-testid="goto-dashboard-btn">View dashboard</a>
+          {% else %}
+            <a href="{{ url_for('signup_page') }}" class="btn custom-btn-primary btn-lg" data-testid="hero-signup-btn">
+              Start free&nbsp;<i class="bi bi-arrow-right"></i>
+            </a>
+            <a href="{{ url_for('login_page') }}" class="btn custom-btn-ghost btn-lg" data-testid="hero-login-btn">I already have an account</a>
+          {% endif %}
+        </div>
+
+        <div class="row mt-5 g-3">
+          <div class="col-6 col-md-3"><div class="stat-card" data-testid="stat-questions"><div class="stat-num">10</div><div class="stat-label">tailored questions / session</div></div></div>
+          <div class="col-6 col-md-3"><div class="stat-card stat-mint"><div class="stat-num">5</div><div class="stat-label">scored skill dimensions</div></div></div>
+          <div class="col-6 col-md-3"><div class="stat-card stat-coral"><div class="stat-num">6+</div><div class="stat-label">question categories</div></div></div>
+          <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-num">∞</div><div class="stat-label">retakes &amp; replays</div></div></div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="hero-image-wrap">
+          <div class="hero-image-bg"></div>
+          <img src="https://images.unsplash.com/photo-1513258496099-48168024aec0?crop=entropy&cs=srgb&fm=jpg&w=900&q=80"
+               alt="Student studying with headphones"
+               class="hero-image"
+               data-testid="hero-image" />
+          <div class="floating-card floating-card-a">
+            <i class="bi bi-check2-circle"></i> Score: 84 / 100
+          </div>
+          <div class="floating-card floating-card-b">
+            <i class="bi bi-lightbulb"></i> Tip: STAR method
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="container-fluid px-4 px-md-5 py-5">
+  <h2 class="section-title" data-testid="features-title">How it works</h2>
+  <div class="row g-4 mt-2">
+    <div class="col-md-4">
+      <div class="custom-card h-100" data-testid="feature-1">
+        <div class="feature-num">01</div>
+        <h3 class="h4">Paste your JD</h3>
+        <p class="text-muted mb-0">Drop in any job description and tell us your course, branch, skills and subjects studied.</p>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="custom-card h-100 card-mint" data-testid="feature-2">
+        <div class="feature-num">02</div>
+        <h3 class="h4">Sit the interview</h3>
+        <p class="text-muted mb-0">A realistic chat interview &mdash; HR, technical, project, behavioral &mdash; one question at a time.</p>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="custom-card h-100 card-coral" data-testid="feature-3">
+        <div class="feature-num">03</div>
+        <h3 class="h4">Get scored &amp; level up</h3>
+        <p class="text-muted mb-0">Score out of 100 across 5 dimensions, strengths, weaknesses and a free study plan.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="container-fluid px-4 px-md-5 pb-5">
+  <div class="custom-card cta-card text-center" data-testid="cta-card">
+    <h2 class="display-5 fw-black mb-3">Stop guessing. Start practicing.</h2>
+    <p class="lead mb-4 col-lg-8 mx-auto">No more crammed last-night prep. Run a full mock interview in 15 minutes, and walk in knowing exactly what to fix.</p>
+    {% if user %}
+      <a href="{{ url_for('setup_page') }}" class="btn custom-btn-primary btn-lg" data-testid="cta-start-btn">Start a new interview</a>
+    {% else %}
+      <a href="{{ url_for('signup_page') }}" class="btn custom-btn-primary btn-lg" data-testid="cta-signup-btn">Create your free account</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

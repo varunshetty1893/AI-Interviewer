@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% set r = interview.report %}
+{% block title %}Your interview report · InterviewQuest{% endblock %}
+{% block content %}
+<section class="container-fluid px-4 px-md-5 py-5">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+    <div>
+      <a href="{{ url_for('dashboard') }}" class="link-bold" data-testid="result-back-link"><i class="bi bi-arrow-left"></i>&nbsp;All interviews</a>
+      <h1 class="display-4 fw-black mt-2" data-testid="result-title">Your interview report.</h1>
+      <p class="text-muted mb-0">{{ interview.role or '' }}{% if interview.experience %} · {{ interview.experience }}{% endif %}{% if interview.completed_at %} · {{ interview.completed_at[:10] }}{% endif %}
+        {% if r.answered is defined %}
+          &nbsp;·&nbsp;<span class="text-muted">{{ r.answered }} answered{% if r.skipped %}, {{ r.skipped }} skipped{% endif %}</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('setup_page') }}" class="btn custom-btn-primary" data-testid="result-retake-btn"><i class="bi bi-arrow-repeat"></i>&nbsp;Try another</a>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="custom-card score-hero" data-testid="score-hero">
+        <div class="text-uppercase fw-bold text-muted small">Overall score</div>
+        <div class="score-big" data-testid="total-score">{{ r.total_score }}<span class="score-of">/100</span></div>
+        <div class="score-badge {{ 'badge-strong' if r.total_score >= 75 else ('badge-mid' if r.total_score >= 50 else 'badge-weak') }}" data-testid="score-band">
+          {% if r.total_score >= 75 %}Strong{% elif r.total_score >= 50 %}Promising{% else %}Needs work{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-8">
+      <div class="custom-card h-100">
+        <h2 class="h4 fw-black">Skill breakdown</h2>
+        <canvas id="radar-chart" height="240" data-testid="radar-chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-md-6">
+      <div class="custom-card card-mint h-100" data-testid="strengths-card">
+        <h3 class="h5 fw-black"><i class="bi bi-stars"></i>&nbsp;Strong areas</h3>
+        <ul class="result-list mb-0">
+          {% for s in r.strengths %}<li>{{ s }}</li>{% endfor %}
+          {% if not r.strengths %}<li class="text-muted">No major strengths detected yet — keep practicing.</li>{% endif %}
+        </ul>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="custom-card card-coral h-100" data-testid="weaknesses-card">
+        <h3 class="h5 fw-black"><i class="bi bi-exclamation-diamond"></i>&nbsp;Weak areas</h3>
+        <ul class="result-list mb-0">
+          {% for w in r.weaknesses %}<li>{{ w }}</li>{% endfor %}
+          {% if not r.weaknesses %}<li class="text-muted">No major gaps — nice work.</li>{% endif %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-lg-7">
+      <div class="custom-card h-100" data-testid="suggestions-card">
+        <h3 class="h5 fw-black"><i class="bi bi-lightbulb"></i>&nbsp;Improvement suggestions</h3>
+        <ol class="result-list result-list-ol mb-0">
+          {% for s in r.improvement_suggestions %}<li>{{ s }}</li>{% endfor %}
+        </ol>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="custom-card h-100" data-testid="topics-card">
+        <h3 class="h5 fw-black"><i class="bi bi-mortarboard"></i>&nbsp;Topics to study</h3>
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          {% for t in r.recommended_topics %}<span class="chip">{{ t }}</span>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="custom-card mt-4" data-testid="courses-card">
+    <h3 class="h5 fw-black"><i class="bi bi-collection-play"></i>&nbsp;Recommended free resources</h3>
+    <div class="row g-3 mt-1">
+      {% for c in r.recommended_courses %}
+      <div class="col-md-6 col-xl-4">
+        <a href="{{ c.url }}" target="_blank" rel="noopener" class="resource-link" data-testid="course-link-{{ loop.index }}">
+          <div class="resource-card">
+            <div class="resource-provider">{{ c.provider }}</div>
+            <div class="resource-title">{{ c.title }}</div>
+            <div class="resource-url"><i class="bi bi-box-arrow-up-right"></i>&nbsp;{{ c.url }}</div>
+          </div>
+        </a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="custom-card mt-4" data-testid="transcript-card">
+    <h3 class="h5 fw-black"><i class="bi bi-chat-quote"></i>&nbsp;Per-question feedback</h3>
+    {% set feedback_map = {} %}
+    {% for f in r.per_answer_feedback %}{% set _ = feedback_map.update({f.q_index|int: f}) %}{% endfor %}
+
+    {# Build ordered list of (interviewer_turn, next_candidate_answer) pairs #}
+    {% set q_pairs = [] %}
+    {% for i in range(interview.conversation|length) %}
+      {% set turn = interview.conversation[i] %}
+      {% if turn.role == 'interviewer' and turn.q_num is defined and turn.q_num %}
+        {% set ans = '— no answer —' %}
+        {% for j in range(i+1, interview.conversation|length) %}
+          {% if interview.conversation[j].role == 'candidate' and ans == '— no answer —' %}
+            {% set ans = interview.conversation[j].answer or '(skipped)' %}
+          {% endif %}
+        {% endfor %}
+        {% set _ = q_pairs.append({'turn': turn, 'ans': ans}) %}
+      {% endif %}
+    {% endfor %}
+
+    {% for pair in q_pairs %}
+      {% set i = loop.index0 %}
+      {% set f = feedback_map.get(i) %}
+      <div class="qa-row" data-testid="qa-row-{{ i }}">
+        <div class="qa-cat">{{ (pair.turn.stage or 'general')|capitalize }}</div>
+        <div class="qa-q">Q{{ pair.turn.q_num }}. {{ pair.turn.text }}</div>
+        <div class="qa-a">{{ pair.ans }}</div>
+        {% if f %}
+        <div class="qa-feedback rating-{{ (f.rating or 'Average')|lower }}">
+          <strong>{{ f.rating }}.</strong> {{ f.comment }}
+        </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+  const ctx = document.getElementById('radar-chart');
+  new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: ['Technical', 'Communication', 'Confidence', 'HR', 'Subject'],
+      datasets: [{
+        label: 'Score',
+        data: [{{ interview.report.technical_score }}, {{ interview.report.communication_score }}, {{ interview.report.confidence_score }}, {{ interview.report.hr_score }}, {{ interview.report.subject_score }}],
+        backgroundColor: 'rgba(168, 230, 207, 0.45)',
+        borderColor: '#111111',
+        borderWidth: 2,
+        pointBackgroundColor: '#FFDE59',
+        pointBorderColor: '#111111',
+        pointBorderWidth: 2,
+        pointRadius: 5,
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks: { stepSize: 25, color: '#555', backdropColor: 'transparent' },
+          grid: { color: 'rgba(17,17,17,0.15)' },
+          angleLines: { color: 'rgba(17,17,17,0.2)' },
+          pointLabels: { font: { family: 'Outfit', weight: '700', size: 13 }, color: '#111' },
+        },
+      },
+    },
+  });
+</script>
+{% endblock %}

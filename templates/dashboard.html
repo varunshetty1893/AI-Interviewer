@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · InterviewQuest{% endblock %}
+{% block content %}
+<section class="container-fluid px-4 px-md-5 py-5">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+    <div>
+      <h1 class="display-4 fw-black mb-1" data-testid="dashboard-title">Hey {{ user.name.split(' ')[0] }} 👋</h1>
+      <p class="lead text-muted mb-0">Your interview history &amp; progress.</p>
+    </div>
+    <a href="{{ url_for('setup_page') }}" class="btn custom-btn-primary btn-lg" data-testid="dashboard-new-btn"><i class="bi bi-plus-lg"></i>&nbsp;New interview</a>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="custom-card h-100" data-testid="stats-attempts">
+        <div class="text-uppercase fw-bold text-muted small">Total attempts</div>
+        <div class="score-big">{{ interviews|length }}</div>
+        <div class="text-muted small">{{ interviews|selectattr('status', 'equalto', 'completed')|list|length }} completed</div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      {% set scores = interviews|selectattr('total_score', 'ne', None)|map(attribute='total_score')|list %}
+      <div class="custom-card card-mint h-100" data-testid="stats-best">
+        <div class="text-uppercase fw-bold text-muted small">Best score</div>
+        <div class="score-big">{{ (scores|max) if scores else '—' }}{% if scores %}<span class="score-of">/100</span>{% endif %}</div>
+        <div class="text-muted small">{% if scores %}Keep it up.{% else %}Complete one interview to see your best.{% endif %}</div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="custom-card card-coral h-100" data-testid="stats-avg">
+        <div class="text-uppercase fw-bold text-muted small">Average score</div>
+        <div class="score-big">{{ ((scores|sum) // (scores|length)) if scores else '—' }}{% if scores %}<span class="score-of">/100</span>{% endif %}</div>
+        <div class="text-muted small">across completed attempts</div>
+      </div>
+    </div>
+  </div>
+
+  {% if progress|length >= 1 %}
+  <div class="custom-card mt-4" data-testid="progress-card">
+    <h3 class="h5 fw-black"><i class="bi bi-graph-up-arrow"></i>&nbsp;Progress over time</h3>
+    <canvas id="progress-chart" height="90"></canvas>
+  </div>
+  {% endif %}
+
+  <div class="mt-4" data-testid="history-list">
+    <h2 class="h3 fw-black mb-3">All interviews</h2>
+    {% if not interviews %}
+      <div class="custom-card text-center py-5">
+        <i class="bi bi-clipboard-x display-4 text-muted"></i>
+        <h3 class="h5 fw-black mt-2">No interviews yet</h3>
+        <p class="text-muted">Start your first mock interview to see results here.</p>
+        <a href="{{ url_for('setup_page') }}" class="btn custom-btn-primary" data-testid="empty-state-start">Start interview</a>
+      </div>
+    {% else %}
+      <div class="row g-3">
+        {% for it in interviews %}
+        <div class="col-md-6 col-xl-4">
+          <a class="history-link" href="{% if it.status == 'completed' %}{{ url_for('result_page', interview_id=it.id) }}{% else %}{{ url_for('interview_page', interview_id=it.id) }}{% endif %}" data-testid="history-card-{{ it.id }}">
+            <div class="custom-card history-card h-100">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="pill-tag pill-small">{{ it.role or 'Interview' }}{% if it.experience %} · {{ it.experience }}{% endif %}</span>
+                {% if it.status == 'completed' %}
+                  <span class="status-chip status-done">Done</span>
+                {% else %}
+                  <span class="status-chip status-progress">In progress</span>
+                {% endif %}
+              </div>
+              <div class="history-score">
+                {% if it.total_score is not none %}
+                  <span class="num">{{ it.total_score }}</span><span class="of">/100</span>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </div>
+              <div class="text-muted small">{{ (it.completed_at or it.created_at)[:10] }}</div>
+            </div>
+          </a>
+        </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+{% if progress|length >= 1 %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+  const labels = {{ progress|map(attribute='n')|list|tojson }};
+  const data = {{ progress|map(attribute='score')|list|tojson }};
+  const ctx = document.getElementById('progress-chart');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels.map(n => 'Attempt ' + n),
+      datasets: [{
+        label: 'Score',
+        data,
+        borderColor: '#111111',
+        borderWidth: 3,
+        backgroundColor: 'rgba(255, 222, 89, 0.35)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 6,
+        pointBackgroundColor: '#FF8B94',
+        pointBorderColor: '#111',
+        pointBorderWidth: 2,
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { min: 0, max: 100, ticks: { stepSize: 25, color: '#555' }, grid: { color: 'rgba(17,17,17,0.08)' } },
+        x: { grid: { display: false }, ticks: { color: '#555' } },
+      },
+    },
+  });
+</script>
+{% endif %}
+{% endblock %}
