@@ -1,4 +1,4 @@
-# 🎯 AI Interviewr
+# 🎯 AI Interviewer
 
 > **AI-powered mock interview simulator** — Paste a job description, answer 10 dynamic questions asked by an AI interviewer, and get a full scored report with feedback.
 
