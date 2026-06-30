@@ -697,7 +697,8 @@ def finish_interview(interview_id):
 
 
 # ── Run ────────────────────────────────────────────────────────────────────────
+init_db()  # ensure tables exist whether run via `python app.py` or gunicorn
+
 if __name__ == "__main__":
-    init_db()
     print("\n App running at http://localhost:5000\n")
     app.run(debug=True, port=5000)
