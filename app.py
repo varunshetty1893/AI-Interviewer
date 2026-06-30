@@ -7,11 +7,12 @@ Run: python app.py → http://localhost:5000
 import json
 import os
 import re
-import sqlite3
 from datetime import datetime, timezone
 from functools import wraps
 
 import bcrypt
+import psycopg2
+import psycopg2.extras
 from groq import Groq
 from flask import (Flask, redirect, render_template, request,
                    session, url_for, jsonify)
@@ -34,27 +35,29 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
 
 # ── Database ──────────────────────────────────────────────────────────────────
-DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+if DATABASE_URL.startswith("postgres://"):
+    # Render/Heroku-style URLs use postgres://, psycopg2 wants postgresql://
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
 
 def init_db():
     conn = get_db()
-    conn.executescript("""
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            id            SERIAL PRIMARY KEY,
             name          TEXT NOT NULL,
             email         TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             created_at    TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS interviews (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id          INTEGER NOT NULL,
+            id               SERIAL PRIMARY KEY,
+            user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             jd               TEXT NOT NULL,
             role             TEXT,
             experience       TEXT,
@@ -72,12 +75,12 @@ def init_db():
             report_json      TEXT,
             total_score      INTEGER,
             created_at       TEXT NOT NULL,
-            completed_at     TEXT,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            completed_at     TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_interviews_user ON interviews(user_id);
     """)
     conn.commit()
+    cur.close()
     conn.close()
 
 def now_iso():
@@ -98,9 +101,12 @@ def current_user():
     if not uid:
         return None
     conn = get_db()
-    row  = conn.execute(
-        "SELECT id, name, email, created_at FROM users WHERE id = ?", (uid,)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, name, email, created_at FROM users WHERE id = %s", (uid,)
+    )
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return dict(row) if row else None
 
@@ -455,10 +461,13 @@ def interview_page(interview_id):
     if not user:
         return redirect(url_for("login_page"))
     conn = get_db()
-    row  = conn.execute(
-        "SELECT * FROM interviews WHERE id = ? AND user_id = ?",
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM interviews WHERE id = %s AND user_id = %s",
         (interview_id, user["id"])
-    ).fetchone()
+    )
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     if not row:
         return "Not found", 404
@@ -475,10 +484,13 @@ def result_page(interview_id):
     if not user:
         return redirect(url_for("login_page"))
     conn = get_db()
-    row  = conn.execute(
-        "SELECT * FROM interviews WHERE id = ? AND user_id = ?",
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM interviews WHERE id = %s AND user_id = %s",
         (interview_id, user["id"])
-    ).fetchone()
+    )
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     if not row:
         return "Not found", 404
@@ -496,10 +508,13 @@ def dashboard():
     if not user:
         return redirect(url_for("login_page"))
     conn = get_db()
-    rows = conn.execute(
-        "SELECT id, role, experience, status, total_score, created_at, completed_at FROM interviews WHERE user_id = ? ORDER BY id DESC",
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, role, experience, status, total_score, created_at, completed_at FROM interviews WHERE user_id = %s ORDER BY id DESC",
         (user["id"],)
-    ).fetchall()
+    )
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
     interviews = [dict(r) for r in rows]
     completed  = [i for i in reversed(interviews) if i["total_score"] is not None]
@@ -518,15 +533,20 @@ def signup():
     if len(password) < 6:
         return render_template("signup.html", user=None, error="Password must be at least 6 characters.")
     conn = get_db()
-    if conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone():
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+    if cur.fetchone():
+        cur.close()
         conn.close()
         return render_template("signup.html", user=None, error="Email already registered.")
-    cur = conn.execute(
-        "INSERT INTO users (name, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+    cur.execute(
+        "INSERT INTO users (name, email, password_hash, created_at) VALUES (%s, %s, %s, %s) RETURNING id",
         (name, email, hash_password(password), now_iso())
     )
+    new_id = cur.fetchone()["id"]
     conn.commit()
-    session["user_id"] = cur.lastrowid
+    session["user_id"] = new_id
+    cur.close()
     conn.close()
     return redirect(url_for("setup_page"))
 
@@ -538,7 +558,10 @@ def login():
     if not email or not password:
         return render_template("login.html", user=None, error="Email and password required.")
     conn = get_db()
-    row  = conn.execute("SELECT id, password_hash FROM users WHERE email = ?", (email,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT id, password_hash FROM users WHERE email = %s", (email,))
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     if not row or not verify_password(password, row["password_hash"]):
         return render_template("login.html", user=None, error="Invalid email or password.")
@@ -576,12 +599,14 @@ def start_interview():
     conversation = [{"role": "interviewer", "text": opening, "stage": "intro"}]
 
     conn = get_db()
-    cur  = conn.execute(
-        "INSERT INTO interviews (user_id, jd, role, experience, skills, course, branch, subjects, conversation_json, current_index, total_questions, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_progress', ?)",
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO interviews (user_id, jd, role, experience, skills, course, branch, subjects, conversation_json, current_index, total_questions, status, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'in_progress', %s) RETURNING id",
         (user_id, jd, role, experience, skills, role, experience, "", json.dumps(conversation), 1, 10, now_iso())
     )
+    interview_id = cur.fetchone()["id"]
     conn.commit()
-    interview_id = cur.lastrowid
+    cur.close()
     conn.close()
     return redirect(url_for("interview_page", interview_id=interview_id))
 
@@ -598,13 +623,17 @@ def submit_answer(interview_id):
     answer_text = (data.get("answer") or "").strip()
 
     conn = get_db()
-    row  = conn.execute(
-        "SELECT * FROM interviews WHERE id = ? AND user_id = ?", (interview_id, user_id)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM interviews WHERE id = %s AND user_id = %s", (interview_id, user_id)
+    )
+    row = cur.fetchone()
     if not row:
+        cur.close()
         conn.close()
         return jsonify({"error": "Not found"}), 404
     if row["status"] != "in_progress":
+        cur.close()
         conn.close()
         return jsonify({"error": "Interview already completed"}), 400
 
@@ -650,11 +679,12 @@ def submit_answer(interview_id):
                 "q_num": next_q_number,
             })
 
-    conn.execute(
-        "UPDATE interviews SET conversation_json = ?, current_index = ? WHERE id = ?",
+    cur.execute(
+        "UPDATE interviews SET conversation_json = %s, current_index = %s WHERE id = %s",
         (json.dumps(conversation), current_index + 1, interview_id)
     )
     conn.commit()
+    cur.close()
     conn.close()
 
     return jsonify({
@@ -672,10 +702,13 @@ def submit_answer(interview_id):
 def finish_interview(interview_id):
     user_id = session["user_id"]
     conn    = get_db()
-    row     = conn.execute(
-        "SELECT * FROM interviews WHERE id = ? AND user_id = ?", (interview_id, user_id)
-    ).fetchone()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM interviews WHERE id = %s AND user_id = %s", (interview_id, user_id)
+    )
+    row = cur.fetchone()
     if not row:
+        cur.close()
         conn.close()
         return jsonify({"error": "Not found"}), 404
 
@@ -684,14 +717,16 @@ def finish_interview(interview_id):
     try:
         report = evaluate_interview(row["jd"], row["role"], row["experience"], conversation)
     except Exception as e:
+        cur.close()
         conn.close()
         return jsonify({"error": f"Evaluation failed: {e}"}), 500
 
-    conn.execute(
-        "UPDATE interviews SET status='completed', report_json=?, total_score=?, completed_at=? WHERE id=?",
+    cur.execute(
+        "UPDATE interviews SET status='completed', report_json=%s, total_score=%s, completed_at=%s WHERE id=%s",
         (json.dumps(report), int(report.get("total_score", 0)), now_iso(), interview_id)
     )
     conn.commit()
+    cur.close()
     conn.close()
     return jsonify({"ok": True, "redirect": url_for("result_page", interview_id=interview_id)})
 
