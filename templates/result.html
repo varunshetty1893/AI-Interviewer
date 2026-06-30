@@ -103,13 +103,13 @@
     {% for i in range(interview.conversation|length) %}
       {% set turn = interview.conversation[i] %}
       {% if turn.role == 'interviewer' and turn.q_num is defined and turn.q_num %}
-        {% set ans = '— no answer —' %}
-        {% for j in range(i+1, interview.conversation|length) %}
-          {% if interview.conversation[j].role == 'candidate' and ans == '— no answer —' %}
-            {% set ans = interview.conversation[j].answer or '(skipped)' %}
-          {% endif %}
-        {% endfor %}
-        {% set _ = q_pairs.append({'turn': turn, 'ans': ans}) %}
+        {% set ans_ns = namespace(value='— no answer —') %}
+{% for j in range(i+1, interview.conversation|length) %}
+  {% if interview.conversation[j].role == 'candidate' and ans_ns.value == '— no answer —' %}
+    {% set ans_ns.value = interview.conversation[j].answer or '(skipped)' %}
+  {% endif %}
+{% endfor %}
+{% set _ = q_pairs.append({'turn': turn, 'ans': ans_ns.value}) %}
       {% endif %}
     {% endfor %}
 
