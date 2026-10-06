@@ -241,7 +241,7 @@ def login_required_json(f):
     return w
 
 # ── Groq ──────────────────────────────────────────────────────────────────────
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 def get_groq():
     key = os.environ.get("GROQ_API_KEY")
