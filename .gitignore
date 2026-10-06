@@ -1,5 +1,8 @@
 # Environment & secrets
 .env
+.env.local
+!.env.example
+.vercel
 
 # Database (local only)
 database.db

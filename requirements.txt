@@ -1,6 +1,6 @@
-flask
-bcrypt
-python-dotenv
-groq
-gunicorn
-psycopg2-binary
+flask>=3.0
+bcrypt>=4.1
+python-dotenv>=1.0
+groq>=0.11
+gunicorn>=22.0
+psycopg2-binary>=2.9.10

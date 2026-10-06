@@ -7,7 +7,9 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat-square&logo=flask&logoColor=white)
 ![Groq](https://img.shields.io/badge/Groq-LLaMA_3.3_70B-F55036?style=flat-square)
-![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-hosted-336791?style=flat-square&logo=postgresql&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-local-003B57?style=flat-square&logo=sqlite&logoColor=white)
+![Vercel](https://img.shields.io/badge/Deploy-Vercel-000000?style=flat-square&logo=vercel&logoColor=white)
 ![License](https://img.shields.io/badge/License-All_Rights_Reserved-red?style=flat-square)
 
 ---
@@ -30,39 +32,31 @@
 |---|---|
 | Backend | Python, Flask |
 | AI Engine | Groq API (LLaMA 3.3 70B) |
-| Database | SQLite |
+| Database | PostgreSQL when hosted (Vercel), SQLite file for local use |
 | Frontend | HTML, CSS, Bootstrap 5, Vanilla JS |
 | Auth | bcrypt password hashing |
-| Testing | Selenium (automated end-to-end) |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-AI_interviewr/
+AI-Interviewer-main/
 │
-├── app.py                  # Main Flask app — all routes and AI logic
+├── app.py                  # Flask app - all routes and AI logic (Vercel entrypoint)
 ├── requirements.txt        # Python dependencies
-├── .env                    # Your API keys (never committed)
+├── .python-version         # Python version used on Vercel
 ├── .env.example            # Template for environment variables
-├── database.db             # SQLite database (auto-created on first run)
+├── .vercelignore           # Files never uploaded to Vercel
+├── Procfile                # Only for Render/Heroku-style hosts
 │
 ├── templates/              # Jinja2 HTML templates
-│   ├── base.html           # Shared layout
-│   ├── index.html          # Landing page
-│   ├── login.html          # Login page
-│   ├── signup.html         # Signup page
-│   ├── setup.html          # Interview setup form
-│   ├── interview.html      # Live interview chat
-│   ├── result.html         # Score report
-│   └── dashboard.html      # User dashboard
+│   ├── base.html  index.html  login.html  signup.html
+│   ├── setup.html  interview.html  result.html  dashboard.html
 │
-├── static/
-│   ├── css/style.css       # Neo-brutalist pastel theme
-│   └── js/interview.js     # Interview state machine
-│
-└── test_interview.py       # Selenium automated test
+└── public/static/          # CSS + JS (served by Vercel's CDN, and by Flask locally)
+    ├── css/style.css
+    └── js/interview.js
 ```
 
 ---
@@ -109,29 +103,25 @@ pip install -r requirements.txt
 
 ### Step 4 — Set up environment variables
 
-Copy the example file and fill in your keys:
-
 ```bash
-# Windows
+# Windows (PowerShell / CMD)
 copy .env.example .env
 
 # Mac / Linux
 cp .env.example .env
 ```
 
-Now open `.env` and add your keys:
+Open `.env` and fill in:
 
 ```env
 GROQ_API_KEY=your_groq_api_key_here
 FLASK_SECRET_KEY=your_secret_key_here
+DATABASE_URL=
 ```
 
-**Get your free Groq API key →** https://console.groq.com
-
-**Generate a Flask secret key:**
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
+- **GROQ_API_KEY** - free key from https://console.groq.com
+- **FLASK_SECRET_KEY** - generate with `python -c "import secrets; print(secrets.token_hex(32))"`
+- **DATABASE_URL** - **leave empty locally.** The app then uses a local SQLite file (`database.db`, created automatically). Fill it only if you want to run locally against PostgreSQL.
 
 ---
 
@@ -141,12 +131,49 @@ python -c "import secrets; print(secrets.token_hex(32))"
 python app.py
 ```
 
-Open your browser at:
-```
-http://localhost:5000
+Open http://localhost:5000 - tables are created automatically. ✅
+
+---
+
+## ▲ Deploy to Vercel
+
+Vercel's filesystem is read-only, so a hosted app needs a **PostgreSQL** database. Neon has a free plan.
+
+**1. Create the database**
+- Easiest: in Vercel go to **Storage → Create → Neon** (Marketplace) and connect it to your project. It adds `DATABASE_URL` for you.
+- Or create a free database at https://neon.tech (or Supabase) and copy the **pooled** connection string. It looks like `postgresql://user:pass@host/db?sslmode=require`.
+
+**2. Push the project to GitHub** (the `.env` file is git-ignored, so your keys are not uploaded).
+
+**3. Import it in Vercel**
+- Vercel dashboard → **Add New → Project** → pick the repo.
+- Framework Preset should show **Flask** (auto-detected from `app.py`).
+- Add these **Environment Variables**:
+
+| Name | Value |
+|---|---|
+| `GROQ_API_KEY` | your Groq key |
+| `FLASK_SECRET_KEY` | a long random string (see Step 4) |
+| `DATABASE_URL` | your PostgreSQL connection string (skip if the Neon integration added it) |
+
+- Click **Deploy**. Tables are created automatically on the first visit.
+
+**Using the Vercel CLI instead**
+```bash
+npm i -g vercel
+vercel          # first deploy (preview)
+vercel --prod   # production
 ```
 
-The database is created automatically on first run. ✅
+**Troubleshooting**
+
+| Symptom | Fix |
+|---|---|
+| Page says "Setup problem: DATABASE_URL is not set" | Add `DATABASE_URL` in Project → Settings → Environment Variables, then **Redeploy** |
+| Page says "FLASK_SECRET_KEY is not set" | Add it the same way, then Redeploy |
+| "Evaluation failed" after the last question | Report generation can take 10-20 s. Raise **Function Max Duration** in Project → Settings → Functions, and check `GROQ_API_KEY` |
+| Logged out right after login | Make sure you open the `https://` URL (secure cookies) and that `FLASK_SECRET_KEY` is the same in every environment |
+| Database connection errors | Use the **pooled** connection string and keep `?sslmode=require` |
 
 ---
 
@@ -186,7 +213,8 @@ Final score = average of all 5 dimensions (skipped questions are penalised).
 | Variable | Description | Required |
 |---|---|---|
 | `GROQ_API_KEY` | Your Groq API key | ✅ Yes |
-| `FLASK_SECRET_KEY` | Flask session secret | ✅ Yes |
+| `FLASK_SECRET_KEY` | Flask session secret | ✅ Yes (required on Vercel) |
+| `DATABASE_URL` | PostgreSQL connection string | ✅ On Vercel · empty = local SQLite |
 
 > ⚠️ Never commit your `.env` file. It is already in `.gitignore`.
 

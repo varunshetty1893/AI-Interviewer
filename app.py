@@ -1,87 +1,201 @@
 """
 InterviewQuest — AI Mock Interviewer
 Dynamic conversation-based interview engine
-Run: python app.py → http://localhost:5000
+Run locally : python app.py            → http://localhost:5000
+Host on Vercel: see README ("Deploy to Vercel")
+
+Database:
+  • DATABASE_URL (or POSTGRES_URL) set  → PostgreSQL  (required on Vercel)
+  • not set                             → local SQLite file (database.db)
 """
 
 import json
 import os
 import re
+import sqlite3
 from datetime import datetime, timezone
 from functools import wraps
 
 import bcrypt
-import psycopg2
-import psycopg2.extras
 from groq import Groq
 from flask import (Flask, redirect, render_template, request,
                    session, url_for, jsonify)
 
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+ON_VERCEL = bool(os.environ.get("VERCEL"))
+
 # ── .env loader ───────────────────────────────────────────────────────────────
 def load_env():
-    path = os.path.join(os.path.dirname(__file__), ".env")
+    path = os.path.join(BASE_DIR, ".env")
     if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8-sig") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     k, _, v = line.partition("=")
-                    os.environ.setdefault(k.strip(), v.strip())
+                    v = v.strip()
+                    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                        v = v[1:-1]          # allow KEY="value" in .env
+                    os.environ.setdefault(k.strip(), v)
 
 load_env()
 
 # ── Flask ─────────────────────────────────────────────────────────────────────
-app = Flask(__name__)
+# Static files live in public/static so Vercel's CDN serves them directly,
+# while Flask serves the very same folder when running locally.
+app = Flask(__name__, static_folder="public/static", static_url_path="/static")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=ON_VERCEL,        # HTTPS only when hosted
+)
 
 # ── Database ──────────────────────────────────────────────────────────────────
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or ""
 if DATABASE_URL.startswith("postgres://"):
     # Render/Heroku-style URLs use postgres://, psycopg2 wants postgresql://
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+USE_PG      = bool(DATABASE_URL)
+SQLITE_PATH = os.environ.get("SQLITE_PATH", os.path.join(BASE_DIR, "database.db"))
+
+
+class _SqliteCursor:
+    """Makes sqlite3 behave like the psycopg2 cursor the routes were written for."""
+    def __init__(self, cur):
+        self._c = cur
+
+    def execute(self, sql, params=()):
+        self._c.execute(sql.replace("%s", "?"), params)
+        return self
+
+    def fetchone(self):
+        return self._c.fetchone()
+
+    def fetchall(self):
+        return self._c.fetchall()
+
+    def close(self):
+        self._c.close()
+
+
+class _SqliteConn:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        return _SqliteCursor(self._conn.cursor())
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
-    return conn
+    if USE_PG:
+        import psycopg2
+        import psycopg2.extras
+        return psycopg2.connect(
+            DATABASE_URL,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+            connect_timeout=10,
+        )
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return _SqliteConn(conn)
+
+
+SCHEMA = """
+    CREATE TABLE IF NOT EXISTS users (
+        id            SERIAL PRIMARY KEY,
+        name          TEXT NOT NULL,
+        email         TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at    TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS interviews (
+        id               SERIAL PRIMARY KEY,
+        user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        jd               TEXT NOT NULL,
+        role             TEXT,
+        experience       TEXT,
+        skills           TEXT,
+        -- legacy cols kept for compat
+        course           TEXT,
+        branch           TEXT,
+        subjects         TEXT,
+        -- dynamic interview state
+        conversation_json TEXT NOT NULL DEFAULT '[]',
+        current_index    INTEGER NOT NULL DEFAULT 0,
+        total_questions  INTEGER NOT NULL DEFAULT 10,
+        status           TEXT NOT NULL DEFAULT 'in_progress',
+        -- result
+        report_json      TEXT,
+        total_score      INTEGER,
+        created_at       TEXT NOT NULL,
+        completed_at     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_interviews_user ON interviews(user_id);
+"""
+
 
 def init_db():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id            SERIAL PRIMARY KEY,
-            name          TEXT NOT NULL,
-            email         TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            created_at    TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS interviews (
-            id               SERIAL PRIMARY KEY,
-            user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            jd               TEXT NOT NULL,
-            role             TEXT,
-            experience       TEXT,
-            skills           TEXT,
-            -- legacy cols kept for compat
-            course           TEXT,
-            branch           TEXT,
-            subjects         TEXT,
-            -- dynamic interview state
-            conversation_json TEXT NOT NULL DEFAULT '[]',
-            current_index    INTEGER NOT NULL DEFAULT 0,
-            total_questions  INTEGER NOT NULL DEFAULT 10,
-            status           TEXT NOT NULL DEFAULT 'in_progress',
-            -- result
-            report_json      TEXT,
-            total_score      INTEGER,
-            created_at       TEXT NOT NULL,
-            completed_at     TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_interviews_user ON interviews(user_id);
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
+    if USE_PG:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(SCHEMA)
+        conn.commit()
+        cur.close()
+        conn.close()
+    else:
+        conn = sqlite3.connect(SQLITE_PATH)
+        conn.executescript(SCHEMA.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT"))
+        conn.commit()
+        conn.close()
+
+
+_db_ready = False
+
+
+def ensure_ready():
+    """Check config + create tables once per process (works for serverless cold starts)."""
+    global _db_ready
+    if _db_ready:
+        return
+    if ON_VERCEL:
+        if not USE_PG:
+            raise RuntimeError(
+                "DATABASE_URL is not set. Vercel has a read-only filesystem, so a PostgreSQL "
+                "database (Neon / Supabase / Vercel Postgres) is required. Add DATABASE_URL in "
+                "Vercel > Project > Settings > Environment Variables, then redeploy."
+            )
+        if not os.environ.get("FLASK_SECRET_KEY"):
+            raise RuntimeError(
+                "FLASK_SECRET_KEY is not set. Add it in Vercel > Project > Settings > "
+                "Environment Variables, then redeploy."
+            )
+    init_db()
+    _db_ready = True
+
+
+@app.before_request
+def _bootstrap():
+    if request.endpoint == "static":
+        return None
+    try:
+        ensure_ready()
+    except Exception as e:  # show a readable message instead of a bare 500
+        app.logger.exception("Startup check failed")
+        return (
+            "<h2 style='font-family:sans-serif'>Setup problem</h2>"
+            f"<p style='font-family:sans-serif'>{e}</p>",
+            500,
+        )
+    return None
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -133,7 +247,7 @@ def get_groq():
     key = os.environ.get("GROQ_API_KEY")
     if not key:
         raise RuntimeError("GROQ_API_KEY not set in .env")
-    return Groq(api_key=key)
+    return Groq(api_key=key, timeout=45.0, max_retries=1)
 
 def ask_groq(system_msg, user_msg, temperature=0.75):
     client = get_groq()
@@ -731,9 +845,11 @@ def finish_interview(interview_id):
     return jsonify({"ok": True, "redirect": url_for("result_page", interview_id=interview_id)})
 
 
-# ── Run ────────────────────────────────────────────────────────────────────────
-init_db()  # ensure tables exist whether run via `python app.py` or gunicorn
-
+# ── Run (local) ────────────────────────────────────────────────────────────────
+# On Vercel the `app` object above is picked up automatically; this block only
+# runs for `python app.py`.
 if __name__ == "__main__":
-    print("\n App running at http://localhost:5000\n")
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"\n App running at http://localhost:{port}")
+    print(f" Database: {'PostgreSQL' if USE_PG else 'SQLite (' + SQLITE_PATH + ')'}\n")
+    app.run(debug=os.environ.get("FLASK_DEBUG", "1") == "1", port=port)
